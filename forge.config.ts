@@ -7,15 +7,31 @@ import { MakerDMG } from '@electron-forge/maker-dmg';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
-import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: false,
     name: 'Dealia',
     executableName: 'Dealia',
   },
   rebuildConfig: {},
+  hooks: {
+    packageAfterCopy: async (_config, buildPath) => {
+      const fs = require('fs-extra');
+      const path = require('path');
+
+      // Copy better-sqlite3 and its dependencies
+      const modulesToCopy = ['better-sqlite3', 'bindings', 'prebuild-install', 'file-uri-to-path'];
+
+      for (const moduleName of modulesToCopy) {
+        const sourcePath = path.join(__dirname, 'node_modules', moduleName);
+        const destPath = path.join(buildPath, 'node_modules', moduleName);
+        if (await fs.pathExists(sourcePath)) {
+          await fs.copy(sourcePath, destPath);
+        }
+      }
+    },
+  },
   makers: [
     new MakerDMG({ format: 'ULFO' }, ['darwin']),
     new MakerZIP({}, ['darwin']),
@@ -24,7 +40,6 @@ const config: ForgeConfig = {
     new MakerDeb({}),
   ],
   plugins: [
-    new AutoUnpackNativesPlugin({}),
     new VitePlugin({
       // `build` can specify multiple entry builds, which can be Main process, Preload scripts, Worker process, etc.
       // If you are familiar with Vite configuration, it will look really familiar.
@@ -57,7 +72,7 @@ const config: ForgeConfig = {
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
       [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
+      [FuseV1Options.OnlyLoadAppFromAsar]: false,
     }),
   ],
 };
