@@ -23,17 +23,17 @@ const createWindow = () => {
     },
   });
 
-  // In development, load from Vite dev server
-  // In production, load from built files
-  const devServerUrl = typeof MAIN_WINDOW_VITE_DEV_SERVER_URL !== 'undefined'
-    ? MAIN_WINDOW_VITE_DEV_SERVER_URL
-    : 'http://localhost:5173';
+  // Check if we're in development mode
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
-  // Try dev server first (will be available in development)
-  mainWindow.loadURL(devServerUrl).catch(() => {
-    // Fallback to production build if dev server not available
+  if (isDev) {
+    // Development: load from Vite dev server
+    const devServerUrl = 'http://localhost:5173';
+    mainWindow.loadURL(devServerUrl);
+  } else {
+    // Production: load from built files
     mainWindow.loadFile(path.join(__dirname, '../renderer/main_window/index.html'));
-  });
+  }
 };
 
 app.on('ready', () => {
