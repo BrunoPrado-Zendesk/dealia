@@ -21,12 +21,15 @@ import {
   setForecastTopDeal,
   logImport,
   getImportHistory,
+  getSalesMotionAccounts,
+  getSalesMotionChanges,
 } from './database';
-import type { AisForecast, ContactStatus } from '../shared/types';
+import type { AisForecast, ContactStatus, SalesMotion } from '../shared/types';
 import { sendTestNotification } from './slack';
 import { runRenewalCheck } from './scheduler';
 import { importCsvFile } from './csv-import';
 import { importForecastCsv, importClosedWonCsv } from './forecast-import';
+import { importSalesMotionCsv } from './sales-motion-import';
 import { syncFromTableau } from './tableau-api';
 import type { AccountFormData, AppSettings } from '../shared/types';
 
@@ -272,5 +275,33 @@ ${context}`;
 
     await shell.openPath(backupPath);
     return { ok: true };
+  });
+
+  // Sales Motions
+  ipcMain.handle('salesMotions:getAccounts', () => getSalesMotionAccounts());
+
+  ipcMain.handle('salesMotions:getChanges', (_event, limit?: number) => getSalesMotionChanges(limit));
+
+  ipcMain.handle('salesMotions:import', async (_event, motion: SalesMotion) => {
+    const result = await dialog.showOpenDialog({
+      title: `Import ${motion} CSV`,
+      filters: [{ name: 'CSV Files', extensions: ['csv', 'tsv', 'txt'] }],
+      properties: ['openFile'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    const filePath = result.filePaths[0];
+    console.log(`[ipc-handlers] Importing ${motion} from:`, filePath);
+
+    try {
+      const importResult = importSalesMotionCsv(filePath, motion);
+      return importResult;
+    } catch (err) {
+      console.error(`[ipc-handlers] ${motion} import error:`, err);
+      throw err;
+    }
   });
 }

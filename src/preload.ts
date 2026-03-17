@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AccountFormData, AisForecast, AppSettings, AnalyticsData, Quota } from './shared/types';
+import type { AccountFormData, AisForecast, AppSettings, AnalyticsData, Quota, SalesMotion, SalesMotionAccount, SalesMotionImportResult } from './shared/types';
 
 
 contextBridge.exposeInMainWorld('api', {
@@ -51,4 +51,9 @@ contextBridge.exposeInMainWorld('api', {
   // Import History
   getImportHistory: () => ipcRenderer.invoke('importHistory:getAll'),
   openBackupCsv: (filename: string) => ipcRenderer.invoke('importHistory:openBackup', filename),
+
+  // Sales Motions
+  getSalesMotionAccounts: (): Promise<SalesMotionAccount[]> => ipcRenderer.invoke('salesMotions:getAccounts'),
+  getSalesMotionChanges: (limit?: number) => ipcRenderer.invoke('salesMotions:getChanges', limit),
+  importSalesMotion: (motion: SalesMotion): Promise<SalesMotionImportResult | null> => ipcRenderer.invoke('salesMotions:import', motion),
 });
