@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { app } from 'electron';
-import type { Account, AccountFormData, AppSettings, AisForecast, AnalyticsData, ContactStatus, ForecastChange, ForecastOpp, ClosedWonOpp, NotificationLogEntry, OppPushStats, Product, Quota, TableauFilters, ImportHistoryEntry, ForecastDifference, SalesMotionAccount, SalesMotionPricing, SalesMotion, DEFAULT_AAIA_PRICE_TABLE } from '../shared/types';
+import type { Account, AccountFormData, AppSettings, AisForecast, AnalyticsData, ContactStatus, ForecastChange, ForecastOpp, ClosedWonOpp, NotificationLogEntry, OppPushStats, Product, Quota, TableauFilters, ImportHistoryEntry, ForecastDifference, SalesMotionAccount, SalesMotionPricing, SalesMotion, ValueQuadrant, PriorityTier } from '../shared/types';
+import { DEFAULT_AAIA_PRICE_TABLE } from '../shared/types';
 import { normalizeProduct, mapForecast } from '../shared/utils';
 
 let db: Database.Database;
@@ -976,4 +977,137 @@ export function getImportHistory(limit = 20): ImportHistoryEntry[] {
   return db
     .prepare('SELECT * FROM import_history ORDER BY imported_at DESC LIMIT ?')
     .all(limit) as ImportHistoryEntry[];
+}
+
+// ── Sales Motions ──────────────────────────────────────────────
+
+function deserializeSalesMotionAccount(row: Record<string, unknown>): SalesMotionAccount {
+  return {
+    id: row.id as number,
+    crm_account_id: row.crm_account_id as string,
+    account_name: (row.account_name as string) || '',
+    account_owner: (row.account_owner as string) || '',
+    ae_manager: (row.ae_manager as string) || '',
+    region: (row.region as string) || '',
+    current_arr: (row.current_arr as number) || 0,
+    num_agents: (row.num_agents as number) || 0,
+    renewal_date: (row.renewal_date as string) || '',
+    in_motion_1: (row.in_motion_1 as number) || 0,
+    in_motion_2: (row.in_motion_2 as number) || 0,
+    in_motion_3: (row.in_motion_3 as number) || 0,
+    in_motion_4: (row.in_motion_4 as number) || 0,
+    messaging_vol: (row.messaging_vol as number) || 0,
+    ticket_vol: (row.ticket_vol as number) || 0,
+    total_vol: (row.total_vol as number) || 0,
+    motion_1_potential: row.motion_1_potential != null ? (row.motion_1_potential as number) : null,
+    motion_2_potential_best: row.motion_2_potential_best != null ? (row.motion_2_potential_best as number) : null,
+    motion_2_potential_worst: row.motion_2_potential_worst != null ? (row.motion_2_potential_worst as number) : null,
+    motion_3_potential: row.motion_3_potential != null ? (row.motion_3_potential as number) : null,
+    motion_4_potential_best: row.motion_4_potential_best != null ? (row.motion_4_potential_best as number) : null,
+    motion_4_potential_worst: row.motion_4_potential_worst != null ? (row.motion_4_potential_worst as number) : null,
+    total_potential_best: (row.total_potential_best as number) || 0,
+    total_potential_worst: (row.total_potential_worst as number) || 0,
+    days_to_renewal: (row.days_to_renewal as number) || 0,
+    value_quadrant: (row.value_quadrant as string) || '',
+    priority_tier: (row.priority_tier as string) || '',
+    priority_score: (row.priority_score as number) || 0,
+    has_open_opp: (row.has_open_opp as number) || 0,
+    open_opp_id: (row.open_opp_id as string) || null,
+    open_opp_arr: row.open_opp_arr != null ? (row.open_opp_arr as number) : null,
+    open_opp_stage: (row.open_opp_stage as string) || null,
+    created_at: row.created_at as string,
+    updated_at: row.updated_at as string,
+  };
+}
+
+export function getSalesMotionAccounts(): SalesMotionAccount[] {
+  const rows = db.prepare('SELECT * FROM sales_motion_accounts ORDER BY priority_score DESC, renewal_date ASC').all();
+  return rows.map((r) => deserializeSalesMotionAccount(r as Record<string, unknown>));
+}
+
+type SalesMotionAccountInput = Omit<SalesMotionAccount, 'id' | 'created_at' | 'updated_at'>;
+
+export function replaceSalesMotionAccounts(
+  accounts: SalesMotionAccountInput[],
+): { inserted: number; updated: number } {
+  const insert = db.prepare(`
+    INSERT INTO sales_motion_accounts (
+      crm_account_id, account_name, account_owner, ae_manager, region,
+      current_arr, num_agents, renewal_date,
+      in_motion_1, in_motion_2, in_motion_3, in_motion_4,
+      messaging_vol, ticket_vol, total_vol,
+      motion_1_potential, motion_2_potential_best, motion_2_potential_worst,
+      motion_3_potential, motion_4_potential_best, motion_4_potential_worst,
+      total_potential_best, total_potential_worst,
+      days_to_renewal, value_quadrant, priority_tier, priority_score,
+      has_open_opp, open_opp_id, open_opp_arr, open_opp_stage
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )
+  `);
+
+  const deleteAll = db.prepare('DELETE FROM sales_motion_accounts');
+
+  let inserted = 0;
+  let updated = 0;
+
+  const run = db.transaction(() => {
+    // Track which keys existed before
+    const existingKeys = new Set(
+      (db.prepare('SELECT crm_account_id FROM sales_motion_accounts').all() as { crm_account_id: string }[]).map((r) => r.crm_account_id),
+    );
+
+    deleteAll.run();
+
+    for (const acc of accounts) {
+      insert.run(
+        acc.crm_account_id,
+        acc.account_name,
+        acc.account_owner,
+        acc.ae_manager,
+        acc.region,
+        acc.current_arr,
+        acc.num_agents,
+        acc.renewal_date,
+        acc.in_motion_1,
+        acc.in_motion_2,
+        acc.in_motion_3,
+        acc.in_motion_4,
+        acc.messaging_vol,
+        acc.ticket_vol,
+        acc.total_vol,
+        acc.motion_1_potential,
+        acc.motion_2_potential_best,
+        acc.motion_2_potential_worst,
+        acc.motion_3_potential,
+        acc.motion_4_potential_best,
+        acc.motion_4_potential_worst,
+        acc.total_potential_best,
+        acc.total_potential_worst,
+        acc.days_to_renewal,
+        acc.value_quadrant,
+        acc.priority_tier,
+        acc.priority_score,
+        acc.has_open_opp,
+        acc.open_opp_id,
+        acc.open_opp_arr,
+        acc.open_opp_stage,
+      );
+
+      if (existingKeys.has(acc.crm_account_id)) {
+        updated++;
+      } else {
+        inserted++;
+      }
+    }
+  });
+
+  run();
+  return { inserted, updated };
+}
+
+export function getSalesMotionChanges(limit = 100): any[] {
+  return db
+    .prepare('SELECT * FROM sales_motion_changes ORDER BY imported_at DESC LIMIT ?')
+    .all(limit);
 }
