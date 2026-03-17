@@ -51,6 +51,55 @@ export interface TableauFilters {
   vp_team: string[];
 }
 
+export interface AaiaPriceTier {
+  volume: number;
+  guidance: number;
+  floor: number;
+}
+
+export const DEFAULT_AAIA_PRICE_TABLE: AaiaPriceTier[] = [
+  { volume: 10000, guidance: 1.00, floor: 0.75 },
+  { volume: 20000, guidance: 1.00, floor: 0.69 },
+  { volume: 30000, guidance: 1.00, floor: 0.69 },
+  { volume: 40000, guidance: 1.00, floor: 0.69 },
+  { volume: 50000, guidance: 1.00, floor: 0.56 },
+  { volume: 60000, guidance: 1.00, floor: 0.56 },
+  { volume: 70000, guidance: 0.95, floor: 0.56 },
+  { volume: 80000, guidance: 0.95, floor: 0.56 },
+  { volume: 90000, guidance: 0.95, floor: 0.56 },
+  { volume: 100000, guidance: 0.95, floor: 0.56 },
+  { volume: 125000, guidance: 0.85, floor: 0.45 },
+  { volume: 150000, guidance: 0.85, floor: 0.45 },
+  { volume: 175000, guidance: 0.85, floor: 0.45 },
+  { volume: 200000, guidance: 0.80, floor: 0.45 },
+  { volume: 225000, guidance: 0.80, floor: 0.45 },
+  { volume: 250000, guidance: 0.80, floor: 0.45 },
+  { volume: 275000, guidance: 0.75, floor: 0.45 },
+  { volume: 300000, guidance: 0.75, floor: 0.45 },
+  { volume: 350000, guidance: 0.75, floor: 0.45 },
+  { volume: 400000, guidance: 0.70, floor: 0.45 },
+  { volume: 450000, guidance: 0.70, floor: 0.45 },
+  { volume: 500000, guidance: 0.65, floor: 0.40 },
+  { volume: 600000, guidance: 0.65, floor: 0.40 },
+  { volume: 700000, guidance: 0.60, floor: 0.40 },
+  { volume: 800000, guidance: 0.60, floor: 0.40 },
+  { volume: 900000, guidance: 0.55, floor: 0.40 },
+  { volume: 1000000, guidance: 0.55, floor: 0.40 },
+];
+
+export interface SalesMotionPricing {
+  // Copilot pricing
+  copilot_latam_price: number;
+  copilot_other_price: number;
+
+  // WEM/QA pricing
+  wem_latam_price: number;
+  wem_other_price: number;
+
+  // AAIA price table (JSON string of array)
+  aaia_price_table: string; // JSON: AaiaPriceTier[]
+}
+
 export interface AppSettings {
   slack_webhook_url: string;
   notification_enabled: boolean;
@@ -60,6 +109,7 @@ export interface AppSettings {
   tableau_site: string;
   tableau_view_id: string;
   tableau_filters: TableauFilters;
+  sales_motion_pricing: SalesMotionPricing;
 }
 
 export interface CsvImportResult {
@@ -227,4 +277,93 @@ export interface ImportHistoryEntry {
   updated_count: number;
   total_pipeline: number;
   created_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Sales Motions
+// ──────────────────────────────────────────────────────────────────
+
+export type SalesMotion = 'motion_1' | 'motion_2' | 'motion_3' | 'motion_4';
+
+export const SALES_MOTIONS: { value: SalesMotion; label: string }[] = [
+  { value: 'motion_1', label: 'Motion 1: AI Bundle at Renewal' },
+  { value: 'motion_2', label: 'Motion 2: AI Agent Automation' },
+  { value: 'motion_3', label: 'Motion 3: QA/WEM' },
+  { value: 'motion_4', label: 'Motion 4: Full AI Platform' },
+];
+
+export type PriorityTier = 'P1' | 'P2' | 'P3' | 'P4';
+export type ValueQuadrant = 'high_spender_high_potential' | 'high_spender_low_potential' | 'low_spender_high_potential' | 'low_spender_low_potential';
+
+export interface SalesMotionAccount {
+  id: number;
+  crm_account_id: string;
+  account_name: string;
+  account_owner: string;
+  ae_manager: string;
+  region: string;
+  current_arr: number;
+  num_agents: number;
+  renewal_date: string;
+
+  // Motion membership (CSV determines which motions this account is in)
+  in_motion_1: number; // 0 | 1
+  in_motion_2: number;
+  in_motion_3: number;
+  in_motion_4: number;
+
+  // Volume data (for Motion 2 calculation)
+  messaging_vol: number;
+  ticket_vol: number;
+  total_vol: number;
+
+  // Potential ARR per motion
+  motion_1_potential: number | null; // Copilot
+  motion_2_potential_best: number | null; // AI Agent (Guidance)
+  motion_2_potential_worst: number | null; // AI Agent (Floor)
+  motion_3_potential: number | null; // QA/WEM
+  motion_4_potential_best: number | null; // Full Platform (Best)
+  motion_4_potential_worst: number | null; // Full Platform (Worst)
+
+  // Aggregated potential (sum of all motions this account is in)
+  total_potential_best: number;
+  total_potential_worst: number;
+
+  // Prioritization
+  days_to_renewal: number;
+  value_quadrant: ValueQuadrant;
+  priority_tier: PriorityTier;
+  priority_score: number;
+
+  // Existing deal tracking
+  has_open_opp: number; // 0 | 1
+  open_opp_id: string | null;
+  open_opp_arr: number | null;
+  open_opp_stage: string | null;
+
+  // Timestamps
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesMotionChange {
+  id: number;
+  imported_at: string;
+  crm_account_id: string;
+  account_name: string;
+  change_type: 'account_added' | 'account_removed' | 'motion_added' | 'motion_removed' | 'potential_changed';
+  motion: SalesMotion | null;
+  old_value: string | null;
+  new_value: string | null;
+  delta_numeric: number | null;
+  created_at: string;
+}
+
+export interface SalesMotionImportResult {
+  motion: SalesMotion;
+  inserted: number;
+  updated: number;
+  failed: number;
+  changes_detected: number;
+  errors: string[];
 }

@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { app } from 'electron';
-import type { Account, AccountFormData, AppSettings, AisForecast, AnalyticsData, ContactStatus, ForecastChange, ForecastOpp, ClosedWonOpp, NotificationLogEntry, OppPushStats, Product, Quota, TableauFilters, ImportHistoryEntry, ForecastDifference } from '../shared/types';
+import type { Account, AccountFormData, AppSettings, AisForecast, AnalyticsData, ContactStatus, ForecastChange, ForecastOpp, ClosedWonOpp, NotificationLogEntry, OppPushStats, Product, Quota, TableauFilters, ImportHistoryEntry, ForecastDifference, SalesMotionAccount, SalesMotionPricing, SalesMotion, DEFAULT_AAIA_PRICE_TABLE } from '../shared/types';
 import { normalizeProduct, mapForecast } from '../shared/utils';
 
 let db: Database.Database;
@@ -353,6 +353,16 @@ export function setSetting(key: string, value: string): void {
 export function getSettings(): AppSettings {
   const tableauFiltersJson = getSetting('tableau_filters') || '{"product_group":[],"segments":[],"close_quarter":[],"commissionable":[],"ai_ae":[],"svp_leader":[],"svp_minus_1":[],"vp_team":[]}';
 
+  const defaultPricing: SalesMotionPricing = {
+    copilot_latam_price: 15,
+    copilot_other_price: 30,
+    wem_latam_price: 10,
+    wem_other_price: 15,
+    aaia_price_table: JSON.stringify(DEFAULT_AAIA_PRICE_TABLE),
+  };
+
+  const pricingJson = getSetting('sales_motion_pricing') || JSON.stringify(defaultPricing);
+
   return {
     slack_webhook_url: getSetting('slack_webhook_url') || '',
     notification_enabled: getSetting('notification_enabled') !== 'false',
@@ -362,6 +372,7 @@ export function getSettings(): AppSettings {
     tableau_site: getSetting('tableau_site') || 'zendesktableau',
     tableau_view_id: getSetting('tableau_view_id') || '',
     tableau_filters: JSON.parse(tableauFiltersJson),
+    sales_motion_pricing: JSON.parse(pricingJson),
   };
 }
 
@@ -389,6 +400,9 @@ export function saveSettings(settings: Partial<AppSettings>): void {
   }
   if (settings.tableau_filters !== undefined) {
     setSetting('tableau_filters', JSON.stringify(settings.tableau_filters));
+  }
+  if (settings.sales_motion_pricing !== undefined) {
+    setSetting('sales_motion_pricing', JSON.stringify(settings.sales_motion_pricing));
   }
 }
 
