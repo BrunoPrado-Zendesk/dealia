@@ -56,4 +56,5 @@ contextBridge.exposeInMainWorld('api', {
   getSalesMotionAccounts: (): Promise<SalesMotionAccount[]> => ipcRenderer.invoke('salesMotions:getAccounts'),
   getSalesMotionChanges: (limit?: number) => ipcRenderer.invoke('salesMotions:getChanges', limit),
   importSalesMotion: (motion: SalesMotion): Promise<SalesMotionImportResult | null> => ipcRenderer.invoke('salesMotions:import', motion),
+  importSalesMotionVolumes: (): Promise<{ updated: number; failed: number; errors: string[] } | null> => ipcRenderer.invoke('salesMotions:importVolumes'),
 });

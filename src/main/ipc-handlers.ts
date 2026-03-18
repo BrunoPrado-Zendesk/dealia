@@ -30,6 +30,7 @@ import { runRenewalCheck } from './scheduler';
 import { importCsvFile } from './csv-import';
 import { importForecastCsv, importClosedWonCsv } from './forecast-import';
 import { importSalesMotionCsv } from './sales-motion-import';
+import { importSalesMotionVolumes } from './sales-motion-volumes-import';
 import { syncFromTableau } from './tableau-api';
 import type { AccountFormData, AppSettings } from '../shared/types';
 
@@ -301,6 +302,29 @@ ${context}`;
       return importResult;
     } catch (err) {
       console.error(`[ipc-handlers] ${motion} import error:`, err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('salesMotions:importVolumes', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import Support Volumes CSV',
+      filters: [{ name: 'CSV Files', extensions: ['csv', 'tsv', 'txt'] }],
+      properties: ['openFile'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    const filePath = result.filePaths[0];
+    console.log('[ipc-handlers] Importing volumes from:', filePath);
+
+    try {
+      const importResult = importSalesMotionVolumes(filePath);
+      return importResult;
+    } catch (err) {
+      console.error('[ipc-handlers] Volumes import error:', err);
       throw err;
     }
   });
