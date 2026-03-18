@@ -15,6 +15,8 @@ export default function Accounts() {
   const [deleteTarget, setDeleteTarget] = useState<Account | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
+  const [importingVolumes, setImportingVolumes] = useState(false);
+  const [volumesMsg, setVolumesMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const data = await window.api.getAccounts();
@@ -52,6 +54,26 @@ export default function Accounts() {
     load();
   }
 
+  async function handleImportVolumes() {
+    setImportingVolumes(true);
+    setVolumesMsg(null);
+
+    try {
+      const result = await window.api.importSalesMotionVolumes();
+
+      if (result) {
+        setVolumesMsg(`✓ Volumes imported: ${result.updated} accounts updated`);
+        setTimeout(() => setVolumesMsg(null), 5000);
+      }
+    } catch (err) {
+      console.error('[Accounts] Volumes import error:', err);
+      setVolumesMsg(`✗ Import failed: ${(err as Error).message}`);
+      setTimeout(() => setVolumesMsg(null), 5000);
+    } finally {
+      setImportingVolumes(false);
+    }
+  }
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Fixed header */}
@@ -61,6 +83,13 @@ export default function Accounts() {
           <p className="text-sm text-gray-400 mt-0.5">{accounts.length} total</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleImportVolumes}
+            disabled={importingVolumes}
+            className="px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {importingVolumes ? 'Importing...' : 'Import Volumes'}
+          </button>
           <button
             onClick={() => setShowImport(true)}
             className="px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600"
@@ -75,6 +104,13 @@ export default function Accounts() {
           </button>
         </div>
       </div>
+
+      {/* Import volumes message */}
+      {volumesMsg && (
+        <div className={`shrink-0 px-8 py-2.5 text-sm ${volumesMsg.startsWith('✓') ? 'bg-green-50 text-green-800 border-b border-green-200' : 'bg-red-50 text-red-800 border-b border-red-200'}`}>
+          {volumesMsg}
+        </div>
+      )}
 
       {/* Fixed search bar */}
       <div className="shrink-0 px-8 py-3 border-b border-gray-100 bg-gray-50">

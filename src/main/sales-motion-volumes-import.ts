@@ -113,10 +113,35 @@ export function importSalesMotionVolumes(filePath: string): {
       const accountId = row['crm_account_id']?.trim() || row['account_id']?.trim() || '';
       if (!accountId) throw new Error('Missing account ID');
 
+      // Support multiple column name variations
+      const messaging = parseNumber(
+        row['messaging_vol'] ||
+        row['msg_vol'] ||
+        row['messaging_volume'] ||
+        '0'
+      );
+
+      const tickets = parseNumber(
+        row['ticket_vol'] ||
+        row['tickets'] ||
+        row['tickets_created_last_30_days'] ||
+        row['ticket_volume'] ||
+        '0'
+      );
+
+      const total = parseNumber(
+        row['total_vol'] ||
+        row['total_volume'] ||
+        '0'
+      );
+
+      // If total not provided, calculate from messaging + tickets
+      const finalTotal = total > 0 ? total : (messaging + tickets);
+
       volumeUpdates.set(accountId, {
-        messaging_vol: parseNumber(row['messaging_vol'] || row['msg_vol'] || '0'),
-        ticket_vol: parseNumber(row['ticket_vol'] || row['tickets'] || '0'),
-        total_vol: parseNumber(row['total_vol'] || row['total_volume'] || '0'),
+        messaging_vol: messaging,
+        ticket_vol: tickets,
+        total_vol: finalTotal,
       });
     } catch (err) {
       result.failed++;
