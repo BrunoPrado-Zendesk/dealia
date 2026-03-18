@@ -203,6 +203,56 @@ function runMigrations(): void {
       total_pipeline   REAL    NOT NULL DEFAULT 0,
       created_at       TEXT    NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS sales_motion_accounts (
+      id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+      crm_account_id           TEXT    NOT NULL UNIQUE,
+      account_name             TEXT    NOT NULL DEFAULT '',
+      account_owner            TEXT    NOT NULL DEFAULT '',
+      ae_manager               TEXT    NOT NULL DEFAULT '',
+      region                   TEXT    NOT NULL DEFAULT '',
+      current_arr              REAL    NOT NULL DEFAULT 0,
+      num_agents               INTEGER NOT NULL DEFAULT 0,
+      renewal_date             TEXT    NOT NULL DEFAULT '',
+      in_motion_1              INTEGER NOT NULL DEFAULT 0,
+      in_motion_2              INTEGER NOT NULL DEFAULT 0,
+      in_motion_3              INTEGER NOT NULL DEFAULT 0,
+      in_motion_4              INTEGER NOT NULL DEFAULT 0,
+      messaging_vol            INTEGER NOT NULL DEFAULT 0,
+      ticket_vol               INTEGER NOT NULL DEFAULT 0,
+      total_vol                INTEGER NOT NULL DEFAULT 0,
+      motion_1_potential       REAL    DEFAULT NULL,
+      motion_2_potential_best  REAL    DEFAULT NULL,
+      motion_2_potential_worst REAL    DEFAULT NULL,
+      motion_3_potential       REAL    DEFAULT NULL,
+      motion_4_potential_best  REAL    DEFAULT NULL,
+      motion_4_potential_worst REAL    DEFAULT NULL,
+      total_potential_best     REAL    NOT NULL DEFAULT 0,
+      total_potential_worst    REAL    NOT NULL DEFAULT 0,
+      days_to_renewal          INTEGER NOT NULL DEFAULT 0,
+      value_quadrant           TEXT    NOT NULL DEFAULT '',
+      priority_tier            TEXT    NOT NULL DEFAULT '',
+      priority_score           REAL    NOT NULL DEFAULT 0,
+      has_open_opp             INTEGER NOT NULL DEFAULT 0,
+      open_opp_id              TEXT    DEFAULT NULL,
+      open_opp_arr             REAL    DEFAULT NULL,
+      open_opp_stage           TEXT    DEFAULT NULL,
+      created_at               TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at               TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS sales_motion_changes (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      imported_at     TEXT    NOT NULL,
+      crm_account_id  TEXT    NOT NULL,
+      account_name    TEXT    NOT NULL DEFAULT '',
+      change_type     TEXT    NOT NULL,
+      motion          TEXT    DEFAULT NULL,
+      old_value       TEXT    DEFAULT NULL,
+      new_value       TEXT    DEFAULT NULL,
+      delta_numeric   REAL    DEFAULT NULL,
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Safe migrations for existing databases that may not have new columns yet
