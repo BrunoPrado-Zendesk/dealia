@@ -11,6 +11,7 @@ import ForecastDashboard from './pages/ForecastDashboard';
 import Settings from './pages/Settings';
 import History from './pages/History';
 import WeeklyTrends from './pages/WeeklyTrends';
+import CommissionReconciliation from './pages/CommissionReconciliation';
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="/forecast-dashboard" element={<ForecastDashboard />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/weekly-trends" element={<WeeklyTrends />} />
+            <Route path="/commission-reconciliation" element={<CommissionReconciliation />} />
             <Route path="/dealia" element={<Dealia />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/history" element={<History />} />

@@ -238,11 +238,69 @@ function runMigrations(): void {
     );
   `);
 
+  // Commission Reconciliation tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS xactly_commissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      opportunity_number TEXT NOT NULL,
+      customer_name TEXT NOT NULL DEFAULT '',
+      commissionable_date TEXT NOT NULL DEFAULT '',
+      credit_type TEXT NOT NULL DEFAULT '',
+      credit_amount REAL NOT NULL DEFAULT 0,
+      period TEXT NOT NULL DEFAULT '',
+      imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(opportunity_number, credit_type, period)
+    );
+
+    CREATE TABLE IF NOT EXISTS tableau_closed_won (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      opportunity_number TEXT NOT NULL,
+      crm_opportunity_id TEXT NOT NULL DEFAULT '',
+      account_name TEXT NOT NULL DEFAULT '',
+      ae_name TEXT NOT NULL DEFAULT '',
+      manager_name TEXT NOT NULL DEFAULT '',
+      product TEXT NOT NULL DEFAULT '',
+      bookings REAL NOT NULL DEFAULT 0,
+      close_date TEXT NOT NULL DEFAULT '',
+      period TEXT NOT NULL DEFAULT '',
+      imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(opportunity_number, product, period)
+    );
+
+    CREATE TABLE IF NOT EXISTS commission_issues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      opportunity_number TEXT NOT NULL,
+      period TEXT NOT NULL,
+      issue_type TEXT NOT NULL,
+      tableau_amount REAL DEFAULT NULL,
+      xactly_amount REAL DEFAULT NULL,
+      variance REAL DEFAULT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      notes TEXT DEFAULT '',
+      reviewed_at TEXT DEFAULT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS commission_investigations (
+      opportunity_number TEXT NOT NULL,
+      period TEXT NOT NULL,
+      status TEXT DEFAULT NULL,
+      notes TEXT DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (opportunity_number, period)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_xactly_period ON xactly_commissions(period);
+    CREATE INDEX IF NOT EXISTS idx_tableau_period ON tableau_closed_won(period);
+    CREATE INDEX IF NOT EXISTS idx_commission_issues_period ON commission_issues(period);
+  `);
+
   // Safe migrations for existing databases that may not have new columns yet
   for (const col of [
     `ALTER TABLE accounts ADD COLUMN target_products TEXT NOT NULL DEFAULT '[]'`,
     `ALTER TABLE accounts ADD COLUMN sfdc_link TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE accounts ADD COLUMN contact_status TEXT NOT NULL DEFAULT 'needs_action'`,
+    `ALTER TABLE tableau_closed_won ADD COLUMN crm_opportunity_id TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE accounts ADD COLUMN contacted_at TEXT DEFAULT NULL`,
     `ALTER TABLE accounts ADD COLUMN ae_manager TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE accounts ADD COLUMN crm_account_id TEXT DEFAULT NULL`,
@@ -1291,4 +1349,350 @@ export function getImportHistory(limit = 20): ImportHistoryEntry[] {
   return db
     .prepare('SELECT * FROM import_history ORDER BY imported_at DESC LIMIT ?')
     .all(limit) as ImportHistoryEntry[];
+}
+
+// ── Commission Reconciliation ──────────────────────────────────
+
+export function importXactlyCommissions(data: {
+  opportunity_number: string;
+  customer_name: string;
+  commissionable_date: string;
+  credit_type: string;
+  credit_amount: number;
+  period: string;
+}[]): { inserted: number; updated: number } {
+  const stmt = db.prepare(`
+    INSERT INTO xactly_commissions (opportunity_number, customer_name, commissionable_date, credit_type, credit_amount, period)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(opportunity_number, credit_type, period) DO UPDATE SET
+      customer_name = excluded.customer_name,
+      commissionable_date = excluded.commissionable_date,
+      credit_amount = excluded.credit_amount,
+      imported_at = datetime('now')
+  `);
+
+  let inserted = 0;
+  let updated = 0;
+
+  const transaction = db.transaction(() => {
+    for (const row of data) {
+      const result = stmt.run(
+        row.opportunity_number,
+        row.customer_name,
+        row.commissionable_date,
+        row.credit_type,
+        row.credit_amount,
+        row.period
+      );
+      if (result.changes > 0) {
+        inserted++;
+      } else {
+        updated++;
+      }
+    }
+  });
+
+  transaction();
+  return { inserted, updated };
+}
+
+export function importTableauClosedWon(data: {
+  opportunity_number: string;
+  crm_opportunity_id: string;
+  account_name: string;
+  ae_name: string;
+  manager_name: string;
+  product: string;
+  bookings: number;
+  close_date: string;
+  period: string;
+}[]): { inserted: number; updated: number } {
+  const stmt = db.prepare(`
+    INSERT INTO tableau_closed_won (opportunity_number, crm_opportunity_id, account_name, ae_name, manager_name, product, bookings, close_date, period)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(opportunity_number, product, period) DO UPDATE SET
+      crm_opportunity_id = excluded.crm_opportunity_id,
+      account_name = excluded.account_name,
+      ae_name = excluded.ae_name,
+      manager_name = excluded.manager_name,
+      bookings = excluded.bookings,
+      close_date = excluded.close_date,
+      imported_at = datetime('now')
+  `);
+
+  let inserted = 0;
+  let updated = 0;
+
+  const transaction = db.transaction(() => {
+    for (const row of data) {
+      const result = stmt.run(
+        row.opportunity_number,
+        row.crm_opportunity_id,
+        row.account_name,
+        row.ae_name,
+        row.manager_name,
+        row.product,
+        row.bookings,
+        row.close_date,
+        row.period
+      );
+      if (result.changes > 0) {
+        inserted++;
+      } else {
+        updated++;
+      }
+    }
+  });
+
+  transaction();
+  return { inserted, updated };
+}
+
+export function getCommissionReconciliation(period: string) {
+  // Helper to classify product into AI or WEM
+  function getProductBook(product: string): string {
+    const upperProduct = product.toUpperCase().trim();
+    if (['AI_EXPERT', 'COPILOT', 'ULTIMATE', 'ULTIMATE_AR', 'ZENDESK_AR'].includes(upperProduct)) {
+      return 'AI';
+    } else if (['QA', 'WEM'].includes(upperProduct)) {
+      return 'WEM';
+    }
+    return 'Unknown';
+  }
+
+  // Get all Tableau rows
+  const tableauRows = db.prepare(`
+    SELECT
+      opportunity_number,
+      crm_opportunity_id,
+      account_name,
+      ae_name,
+      manager_name,
+      close_date,
+      bookings,
+      product
+    FROM tableau_closed_won
+    WHERE period = ?
+    ORDER BY opportunity_number, product
+  `).all(period) as Array<{
+    opportunity_number: string;
+    crm_opportunity_id: string;
+    account_name: string;
+    ae_name: string;
+    manager_name: string;
+    close_date: string;
+    bookings: number;
+    product: string;
+  }>;
+
+  // Group Tableau by opportunity + product book
+  const tableauMap = new Map<string, {
+    opportunity_number: string;
+    crm_opportunity_id: string;
+    account_name: string;
+    ae_name: string;
+    manager_name: string;
+    close_date: string;
+    total_bookings: number;
+    products: string[];
+    product_book: string;
+  }>();
+
+  for (const row of tableauRows) {
+    const productBook = getProductBook(row.product);
+    const key = `${row.opportunity_number}|${productBook}`;
+
+    const existing = tableauMap.get(key);
+    if (existing) {
+      existing.total_bookings += row.bookings;
+      existing.products.push(row.product);
+    } else {
+      tableauMap.set(key, {
+        opportunity_number: row.opportunity_number,
+        crm_opportunity_id: row.crm_opportunity_id,
+        account_name: row.account_name,
+        ae_name: row.ae_name,
+        manager_name: row.manager_name,
+        close_date: row.close_date,
+        total_bookings: row.bookings,
+        products: [row.product],
+        product_book: productBook,
+      });
+    }
+  }
+
+  // Get all Xactly rows
+  const xactlyRows = db.prepare(`
+    SELECT
+      opportunity_number,
+      customer_name,
+      commissionable_date,
+      credit_amount,
+      credit_type
+    FROM xactly_commissions
+    WHERE period = ?
+    ORDER BY opportunity_number, credit_type
+  `).all(period) as Array<{
+    opportunity_number: string;
+    customer_name: string;
+    commissionable_date: string;
+    credit_amount: number;
+    credit_type: string;
+  }>;
+
+  // Map Xactly credit types to product books
+  const xactlyMap = new Map<string, {
+    opportunity_number: string;
+    customer_name: string;
+    commissionable_date: string;
+    total_credit: number;
+    credit_types: string[];
+    product_book: string;
+  }>();
+
+  for (const row of xactlyRows) {
+    const creditType = row.credit_type.toUpperCase();
+    let productBook = 'Unknown';
+    if (creditType.includes('AI PRODUCT') || creditType.includes('AI_PRODUCT')) {
+      productBook = 'AI';
+    } else if (creditType.includes('WEM PRODUCT') || creditType.includes('WEM_PRODUCT')) {
+      productBook = 'WEM';
+    }
+
+    const key = `${row.opportunity_number}|${productBook}`;
+
+    const existing = xactlyMap.get(key);
+    if (existing) {
+      existing.total_credit += row.credit_amount;
+      existing.credit_types.push(row.credit_type);
+    } else {
+      xactlyMap.set(key, {
+        opportunity_number: row.opportunity_number,
+        customer_name: row.customer_name,
+        commissionable_date: row.commissionable_date,
+        total_credit: row.credit_amount,
+        credit_types: [row.credit_type],
+        product_book: productBook,
+      });
+    }
+  }
+
+  // Get investigation statuses
+  const investigations = db.prepare(`
+    SELECT opportunity_number, status
+    FROM commission_investigations
+    WHERE period = ?
+  `).all(period) as Array<{ opportunity_number: string; status: string | null }>;
+
+  const investigationMap = new Map(investigations.map(i => [i.opportunity_number, i.status]));
+
+  // Get all unique keys (opportunity|product_book)
+  const allKeys = new Set([...tableauMap.keys(), ...xactlyMap.keys()]);
+
+  const results = [];
+  for (const key of allKeys) {
+    const tableau = tableauMap.get(key);
+    const xactly = xactlyMap.get(key);
+
+    // Extract opportunity number for investigation lookup
+    const oppNum = key.split('|')[0];
+    const investigationStatus = investigationMap.get(oppNum) || null;
+
+    if (!tableau && xactly) {
+      // In Xactly but not Tableau
+      results.push({
+        opportunity_number: oppNum,
+        crm_opportunity_id: '',
+        account_name: xactly.customer_name,
+        ae_name: '',
+        manager_name: '',
+        close_date: xactly.commissionable_date || '',
+        tableau_amount: null,
+        xactly_amount: xactly.total_credit,
+        variance: null,
+        issue_type: 'xactly_only',
+        products: '',
+        credit_types: xactly.credit_types.join(', '),
+        product_book: xactly.product_book,
+        investigation_status: investigationStatus,
+      });
+    } else if (tableau && !xactly) {
+      // In Tableau but not Xactly (MISSING COMMISSION)
+      // Variance = Xactly ($0) - Tableau (negative value showing underpayment)
+      const variance = 0 - tableau.total_bookings;
+      results.push({
+        opportunity_number: oppNum,
+        crm_opportunity_id: tableau.crm_opportunity_id || '',
+        account_name: tableau.account_name,
+        ae_name: tableau.ae_name,
+        manager_name: tableau.manager_name,
+        close_date: tableau.close_date || '',
+        tableau_amount: tableau.total_bookings,
+        xactly_amount: 0,
+        variance,
+        issue_type: 'missing_in_xactly',
+        products: tableau.products.join(', '),
+        credit_types: '',
+        product_book: tableau.product_book,
+        investigation_status: investigationStatus,
+      });
+    } else if (tableau && xactly) {
+      // In both - check if amounts match
+      const variance = xactly.total_credit - tableau.total_bookings;
+      const issueType = Math.abs(variance) > 1 ? 'arr_mismatch' : 'match';
+
+      results.push({
+        opportunity_number: oppNum,
+        crm_opportunity_id: tableau.crm_opportunity_id || '',
+        account_name: tableau.account_name,
+        ae_name: tableau.ae_name,
+        manager_name: tableau.manager_name,
+        close_date: tableau.close_date || xactly.commissionable_date || '',
+        tableau_amount: tableau.total_bookings,
+        xactly_amount: xactly.total_credit,
+        variance,
+        issue_type: issueType,
+        products: tableau.products.join(', '),
+        credit_types: xactly.credit_types.join(', '),
+        product_book: tableau.product_book,
+        investigation_status: investigationStatus,
+      });
+    }
+  }
+
+  return results;
+}
+
+export function getCommissionPeriods(): string[] {
+  const tableauPeriods = db.prepare('SELECT DISTINCT period FROM tableau_closed_won ORDER BY period DESC').all() as Array<{ period: string }>;
+  const xactlyPeriods = db.prepare('SELECT DISTINCT period FROM xactly_commissions ORDER BY period DESC').all() as Array<{ period: string }>;
+
+  const allPeriods = new Set([
+    ...tableauPeriods.map(p => p.period),
+    ...xactlyPeriods.map(p => p.period),
+  ]);
+
+  return Array.from(allPeriods).sort().reverse();
+}
+
+export function clearCommissionData(period: string): void {
+  db.prepare('DELETE FROM xactly_commissions WHERE period = ?').run(period);
+  db.prepare('DELETE FROM tableau_closed_won WHERE period = ?').run(period);
+  db.prepare('DELETE FROM commission_issues WHERE period = ?').run(period);
+  db.prepare('DELETE FROM commission_investigations WHERE period = ?').run(period);
+}
+
+export function setInvestigationStatus(opportunityNumber: string, period: string, status: string | null): void {
+  if (status === null) {
+    db.prepare('DELETE FROM commission_investigations WHERE opportunity_number = ? AND period = ?')
+      .run(opportunityNumber, period);
+  } else {
+    db.prepare(`
+      INSERT INTO commission_investigations (opportunity_number, period, status)
+      VALUES (?, ?, ?)
+      ON CONFLICT(opportunity_number, period) DO UPDATE SET
+        status = excluded.status,
+        updated_at = datetime('now')
+    `).run(opportunityNumber, period, status);
+  }
 }

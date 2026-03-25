@@ -31,6 +31,10 @@ import {
   deleteSnapshot,
   snapshotCurrentState,
   getPipelineSnapshots,
+  getCommissionReconciliation,
+  getCommissionPeriods,
+  clearCommissionData,
+  setInvestigationStatus,
 } from './database';
 import type { AisForecast, ContactStatus } from '../shared/types';
 import { sendTestNotification } from './slack';
@@ -38,6 +42,7 @@ import { runRenewalCheck } from './scheduler';
 import { importCsvFile } from './csv-import';
 import { importForecastCsv, importClosedWonCsv, importHistoricalCsv, importHistoricalClosedWonCsv } from './forecast-import';
 import { syncFromTableau } from './tableau-api';
+import { importXactlyCSV, importTableauCSV } from './commission-import';
 import type { AccountFormData, AppSettings } from '../shared/types';
 
 /**
@@ -349,5 +354,16 @@ ${context}`;
       console.error('[pdf:export] Error:', err);
       return { success: false, error: err.message };
     }
+  });
+
+  // Commission Reconciliation
+  ipcMain.handle('commission:importXactly', (_event, filePath: string, period: string) => importXactlyCSV(filePath, period));
+  ipcMain.handle('commission:importTableau', (_event, filePath: string, period: string) => importTableauCSV(filePath, period));
+  ipcMain.handle('commission:getReconciliation', (_event, period: string) => getCommissionReconciliation(period));
+  ipcMain.handle('commission:getPeriods', () => getCommissionPeriods());
+  ipcMain.handle('commission:clearData', (_event, period: string) => { clearCommissionData(period); return { ok: true }; });
+  ipcMain.handle('commission:setInvestigationStatus', (_event, opportunityNumber: string, period: string, status: string | null) => {
+    setInvestigationStatus(opportunityNumber, period, status);
+    return { ok: true };
   });
 }

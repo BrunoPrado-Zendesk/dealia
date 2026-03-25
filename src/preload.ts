@@ -73,4 +73,18 @@ contextBridge.exposeInMainWorld('api', {
   // PDF Export
   exportPdf: (defaultFilename: string): Promise<{ success: boolean; filePath?: string; error?: string; canceled?: boolean }> =>
     ipcRenderer.invoke('pdf:export', defaultFilename),
+
+  // Commission Reconciliation
+  importXactlyCommissions: (filePath: string, period: string): Promise<{ inserted: number; updated: number }> =>
+    ipcRenderer.invoke('commission:importXactly', filePath, period),
+  importTableauCommissions: (filePath: string, period: string): Promise<{ inserted: number; updated: number }> =>
+    ipcRenderer.invoke('commission:importTableau', filePath, period),
+  getCommissionReconciliation: (period: string) =>
+    ipcRenderer.invoke('commission:getReconciliation', period),
+  getCommissionPeriods: (): Promise<string[]> =>
+    ipcRenderer.invoke('commission:getPeriods'),
+  clearCommissionData: (period: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('commission:clearData', period),
+  setInvestigationStatus: (opportunityNumber: string, period: string, status: string | null): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('commission:setInvestigationStatus', opportunityNumber, period, status),
 });
