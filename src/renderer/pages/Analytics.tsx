@@ -214,32 +214,6 @@ export default function Analytics() {
             segmentFilter={segmentFilterOv}
             setSegmentFilter={(v) => updateAnalyticsOverviewFilters({ segmentFilter: v })}
           />
-<<<<<<< HEAD
-        : pageTab === 'changes'
-        ? <ChangesTab
-            data={data}
-            opps={opps}
-            tab={changesTab}
-            setTab={(v) => updateAnalyticsChangesFilters({ changesTab: v })}
-            aiAeFilter={aiAeFilter}
-            setAiAeFilter={(v) => updateAnalyticsChangesFilters({ aiAeFilter: v })}
-            managerFilter={managerFilter}
-            setManagerFilter={(v) => updateAnalyticsChangesFilters({ managerFilter: v })}
-            regionFilter={regionFilter}
-            setRegionFilter={(v) => updateAnalyticsChangesFilters({ regionFilter: v })}
-            segmentFilter={segmentFilter}
-            setSegmentFilter={(v) => updateAnalyticsChangesFilters({ segmentFilter: v })}
-            importFilter={importFilter}
-            setImportFilter={(v) => updateAnalyticsChangesFilters({ importFilter: v })}
-            chDatePreset={chDatePreset}
-            setChDatePreset={(v) => updateAnalyticsChangesFilters({ chDatePreset: v })}
-            chCustomFrom={chCustomFrom}
-            setChCustomFrom={(v) => updateAnalyticsChangesFilters({ chCustomFrom: v })}
-            chCustomTo={chCustomTo}
-            setChCustomTo={(v) => updateAnalyticsChangesFilters({ chCustomTo: v })}
-          />
-=======
->>>>>>> upstream/main
         : <ExecutiveSummaryTab
             changes={data?.changes ?? []}
             opps={opps}
