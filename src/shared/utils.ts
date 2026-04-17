@@ -120,7 +120,7 @@ export function getQuarterWeeks(quarter: string): Array<{ start: Date; end: Date
   }
 
   const weeks: Array<{ start: Date; end: Date; label: string }> = [];
-  let current = getWeekStart(qStart);
+  const current = getWeekStart(qStart);
 
   while (current <= qEnd) {
     const weekEnd = new Date(current);

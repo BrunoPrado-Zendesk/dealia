@@ -135,8 +135,10 @@ export async function importTableauCSV(filePath: string, period: string): Promis
           const cleanRow = (row: any): TableauRow | null => {
             const cleanedRow: any = {};
             for (const key in row) {
-              const cleanKey = key.replace(/\x00/g, '');
-              const cleanValue = typeof row[key] === 'string' ? row[key].replace(/\x00/g, '') : row[key];
+              // eslint-disable-next-line no-control-regex
+              const cleanKey = key.replace(/\u0000/g, '');
+              // eslint-disable-next-line no-control-regex
+              const cleanValue = typeof row[key] === 'string' ? row[key].replace(/\u0000/g, '') : row[key];
               cleanedRow[cleanKey] = cleanValue;
             }
             return cleanedRow as TableauRow;
