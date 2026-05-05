@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { toCloseQuarter } from '../../shared/utils';
 
 // Define filter types for all pages
 export interface PipelineFilters {
@@ -69,6 +70,61 @@ export interface AnalyticsForecastFilters {
   newOppFilter: 'all' | '50k_plus';
 }
 
+export interface ClosedLostFilters {
+  searchQuery: string;
+  managerFilter: string;
+  quarterFilter: string;
+  monthFilter: string;
+  aiAeFilter: string;
+}
+
+export interface WeeklyTrendsVisibleLines {
+  vpPipeline: boolean;
+  vpDealBacked: boolean;
+  vpCommit: boolean;
+  vpML: boolean;
+  vpBestCase: boolean;
+  aisDealBacked: boolean;
+  aisCommit: boolean;
+  aisML: boolean;
+  aisBestCase: boolean;
+  weightedPipe: boolean;
+  closedWon: boolean;
+}
+
+export interface WeeklyTrendsFilters {
+  selectedWeekIndex: number | null;
+  selectedRegion: 'All' | 'NA' | 'LATAM';
+  selectedManagers: Set<string>;
+  visibleLines: WeeklyTrendsVisibleLines;
+  expandedSection: string | null;
+}
+
+export type CommissionReconSortColumn =
+  | 'opp_number'
+  | 'account_name'
+  | 'ae_name'
+  | 'close_date'
+  | 'tableau_close_date'
+  | 'xactly_close_date'
+  | 'issue_type'
+  | 'tableau_amount'
+  | 'xactly_amount'
+  | 'variance';
+export type CommissionReconSortDirection = 'asc' | 'desc';
+
+export interface CommissionReconciliationFilters {
+  selectedPeriod: string;
+  sortColumn: CommissionReconSortColumn;
+  sortDirection: CommissionReconSortDirection;
+  filterIssueTypes: Set<string>;
+  filterInvestigations: Set<string>;
+}
+
+export interface AccountsFilters {
+  search: string;
+}
+
 export interface AllFilters {
   pipeline: PipelineFilters;
   closedWon: ClosedWonFilters;
@@ -77,10 +133,14 @@ export interface AllFilters {
   analyticsOverview: AnalyticsOverviewFilters;
   analyticsChanges: AnalyticsChangesFilters;
   analyticsForecast: AnalyticsForecastFilters;
+  closedLost: ClosedLostFilters;
+  weeklyTrends: WeeklyTrendsFilters;
+  commissionReconciliation: CommissionReconciliationFilters;
+  accounts: AccountsFilters;
 }
 
-// Default values (all filters empty/off)
-const getDefaultFilters = (): AllFilters => ({
+// Default values (all filters empty/off). Exported for tests.
+export const getDefaultFilters = (): AllFilters => ({
   pipeline: {
     searchQuery: '',
     managerFilter: new Set(),
@@ -142,10 +202,55 @@ const getDefaultFilters = (): AllFilters => ({
     arrFilter: '50k_plus',
     newOppFilter: '50k_plus',
   },
+  closedLost: {
+    searchQuery: '',
+    managerFilter: '',
+    // Default to the current quarter on fresh sessions, matching prior page-local behavior.
+    quarterFilter: toCloseQuarter(new Date().toISOString().split('T')[0]),
+    monthFilter: '',
+    aiAeFilter: '',
+  },
+  weeklyTrends: {
+    // null = "auto-resolve to the current week at render time" so a new
+    // session lands on the current week even after a quarter rolls over.
+    selectedWeekIndex: null,
+    selectedRegion: 'NA',
+    selectedManagers: new Set(),
+    visibleLines: {
+      vpPipeline: false,
+      vpDealBacked: true,
+      vpCommit: false,
+      vpML: false,
+      vpBestCase: false,
+      aisDealBacked: false,
+      aisCommit: false,
+      aisML: false,
+      aisBestCase: false,
+      weightedPipe: false,
+      closedWon: true,
+    },
+    expandedSection: null,
+  },
+  commissionReconciliation: {
+    selectedPeriod: '',
+    sortColumn: 'opp_number',
+    sortDirection: 'asc',
+    filterIssueTypes: new Set(['match', 'arr_mismatch', 'missing_in_xactly']),
+    filterInvestigations: new Set([
+      'not_investigated',
+      'Send to Commish Team',
+      'Xactly Correct - Renewal',
+      'Xactly Correct - OTD',
+      'Xactly Correct - Other',
+    ]),
+  },
+  accounts: {
+    search: '',
+  },
 });
 
-// Helper functions for sessionStorage serialization
-const serializeFilters = (filters: AllFilters): string => {
+// Helper functions for sessionStorage serialization. Exported for tests.
+export const serializeFilters = (filters: AllFilters): string => {
   return JSON.stringify(filters, (_key, value) => {
     if (value instanceof Set) {
       return { _type: 'Set', values: Array.from(value) };
@@ -154,7 +259,7 @@ const serializeFilters = (filters: AllFilters): string => {
   });
 };
 
-const deserializeFilters = (json: string): AllFilters | null => {
+export const deserializeFilters = (json: string): AllFilters | null => {
   try {
     return JSON.parse(json, (_key, value) => {
       if (value && value._type === 'Set') {
@@ -167,6 +272,9 @@ const deserializeFilters = (json: string): AllFilters | null => {
   }
 };
 
+// Storage key used by FilterProvider for sessionStorage rehydration. Exported for tests.
+export const FILTER_STORAGE_KEY = 'dealia_filters';
+
 interface FilterContextType {
   filters: AllFilters;
   updatePipelineFilters: (updates: Partial<PipelineFilters>) => void;
@@ -176,17 +284,19 @@ interface FilterContextType {
   updateAnalyticsOverviewFilters: (updates: Partial<AnalyticsOverviewFilters>) => void;
   updateAnalyticsChangesFilters: (updates: Partial<AnalyticsChangesFilters>) => void;
   updateAnalyticsForecastFilters: (updates: Partial<AnalyticsForecastFilters>) => void;
+  updateClosedLostFilters: (updates: Partial<ClosedLostFilters>) => void;
+  updateWeeklyTrendsFilters: (updates: Partial<WeeklyTrendsFilters>) => void;
+  updateCommissionReconciliationFilters: (updates: Partial<CommissionReconciliationFilters>) => void;
+  updateAccountsFilters: (updates: Partial<AccountsFilters>) => void;
   resetAllFilters: () => void;
 }
 
 const FilterContext = createContext<FilterContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'dealia_filters';
-
 export function FilterProvider({ children }: { children: ReactNode }) {
   const [filters, setFilters] = useState<AllFilters>(() => {
     // Try to load from sessionStorage
-    const stored = sessionStorage.getItem(STORAGE_KEY);
+    const stored = sessionStorage.getItem(FILTER_STORAGE_KEY);
     if (stored) {
       const parsed = deserializeFilters(stored);
       if (parsed) {
@@ -198,7 +308,7 @@ export function FilterProvider({ children }: { children: ReactNode }) {
 
   // Save to sessionStorage whenever filters change
   useEffect(() => {
-    sessionStorage.setItem(STORAGE_KEY, serializeFilters(filters));
+    sessionStorage.setItem(FILTER_STORAGE_KEY, serializeFilters(filters));
   }, [filters]);
 
   const updatePipelineFilters = (updates: Partial<PipelineFilters>) => {
@@ -250,10 +360,40 @@ export function FilterProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const updateClosedLostFilters = (updates: Partial<ClosedLostFilters>) => {
+    setFilters((prev) => ({
+      ...prev,
+      closedLost: { ...prev.closedLost, ...updates },
+    }));
+  };
+
+  const updateWeeklyTrendsFilters = (updates: Partial<WeeklyTrendsFilters>) => {
+    setFilters((prev) => ({
+      ...prev,
+      weeklyTrends: { ...prev.weeklyTrends, ...updates },
+    }));
+  };
+
+  const updateCommissionReconciliationFilters = (
+    updates: Partial<CommissionReconciliationFilters>,
+  ) => {
+    setFilters((prev) => ({
+      ...prev,
+      commissionReconciliation: { ...prev.commissionReconciliation, ...updates },
+    }));
+  };
+
+  const updateAccountsFilters = (updates: Partial<AccountsFilters>) => {
+    setFilters((prev) => ({
+      ...prev,
+      accounts: { ...prev.accounts, ...updates },
+    }));
+  };
+
   const resetAllFilters = () => {
     const defaults = getDefaultFilters();
     setFilters(defaults);
-    sessionStorage.setItem(STORAGE_KEY, serializeFilters(defaults));
+    sessionStorage.setItem(FILTER_STORAGE_KEY, serializeFilters(defaults));
   };
 
   return (
@@ -267,6 +407,10 @@ export function FilterProvider({ children }: { children: ReactNode }) {
         updateAnalyticsOverviewFilters,
         updateAnalyticsChangesFilters,
         updateAnalyticsForecastFilters,
+        updateClosedLostFilters,
+        updateWeeklyTrendsFilters,
+        updateCommissionReconciliationFilters,
+        updateAccountsFilters,
         resetAllFilters,
       }}
     >
