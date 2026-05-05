@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { ForecastOpp, ClosedWonOpp, ForecastChange } from '../../shared/types';
 import { toCloseQuarter, getQuarterWeeks, formatWeekRange, calculateWeightedPipe } from '../../shared/utils';
+import { useFilters, type WeeklyTrendsVisibleLines } from '../contexts/FilterContext';
 
 // Print styles for PDF export
 const printStyles = `
@@ -180,35 +181,31 @@ export default function WeeklyTrends() {
     const now = new Date();
     return now >= w.start && now <= w.end;
   });
-  // Use lazy initializer to find current week at component mount
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState(() => {
-    const now = new Date();
-    const weeksArr = getQuarterWeeks(currentQuarter);
-    const idx = weeksArr.findIndex((w) => now >= w.start && now <= w.end);
-    return idx >= 0 ? idx : 0;
-  });
 
-  // Region filter state
-  const [selectedRegion, setSelectedRegion] = useState<'All' | 'NA' | 'LATAM'>('NA');
+  // Persistent filter state (sessionStorage-backed via FilterContext).
+  // selectedWeekIndex is null on first session so we can fall back to the
+  // current week even after a quarter rolls over; once the user picks a
+  // week we persist the resolved numeric index.
+  const { filters, updateWeeklyTrendsFilters } = useFilters();
+  const {
+    selectedWeekIndex: storedWeekIndex,
+    selectedRegion,
+    selectedManagers,
+    visibleLines,
+  } = filters.weeklyTrends;
+  const selectedWeekIndex =
+    storedWeekIndex !== null ? storedWeekIndex : currentWeekIndex >= 0 ? currentWeekIndex : 0;
+  const setSelectedWeekIndex = (next: number) =>
+    updateWeeklyTrendsFilters({ selectedWeekIndex: next });
+  const setSelectedRegion = (next: 'All' | 'NA' | 'LATAM') =>
+    updateWeeklyTrendsFilters({ selectedRegion: next });
+  const setSelectedManagers = (next: Set<string>) =>
+    updateWeeklyTrendsFilters({ selectedManagers: next });
+  const setVisibleLines = (next: typeof visibleLines) =>
+    updateWeeklyTrendsFilters({ visibleLines: next });
 
-  // Manager filter state (multi-select)
-  const [selectedManagers, setSelectedManagers] = useState<Set<string>>(new Set());
+  // Manager dropdown open/close stays local — it's transient UI, not a filter.
   const [showManagerDropdown, setShowManagerDropdown] = useState(false);
-
-  // Chart toggle state
-  const [visibleLines, setVisibleLines] = useState({
-    vpPipeline: false,
-    vpDealBacked: true,
-    vpCommit: false,
-    vpML: false,
-    vpBestCase: false,
-    aisDealBacked: false,
-    aisCommit: false,
-    aisML: false,
-    aisBestCase: false,
-    weightedPipe: false,
-    closedWon: true,
-  });
 
   // Print mode state
   const [preparingPrint, setPreparingPrint] = useState(false);
@@ -1002,7 +999,7 @@ function TrendChart({
   selectedIndex,
 }: {
   weeklyData: WeekData[];
-  visibleLines: Record<string, boolean>;
+  visibleLines: WeeklyTrendsVisibleLines;
   selectedIndex: number;
 }) {
   const [hoveredPoint, setHoveredPoint] = React.useState<{ x: number; y: number; label: string; value: string } | null>(null);
@@ -1411,10 +1408,11 @@ function MovementBreakdown({
   setWeeklyNotesNA: (notes: string) => void;
   setWeeklyNotesLATAM: (notes: string) => void;
 }) {
-  const [expandedSection, setExpandedSection] = React.useState<string | null>(null);
+  const { filters: filterCtx, updateWeeklyTrendsFilters } = useFilters();
+  const expandedSection = filterCtx.weeklyTrends.expandedSection;
 
   const toggleSection = (section: string) => {
-    setExpandedSection(expandedSection === section ? null : section);
+    updateWeeklyTrendsFilters({ expandedSection: expandedSection === section ? null : section });
   };
 
   const exportDealBackedHtml = () => {
